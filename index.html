@@ -12,19 +12,6 @@
       align-items: center;
       height: 100vh;
       font-family: Arial, sans-serif;
-      cursor: pointer;
-    }
-
-    #start-button {
-      padding: 20px 40px;
-      font-size: 2rem;
-      background: #ff3366;
-      color: white;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      margin-bottom: 20px;
-      z-index: 1000;
     }
 
     #countdown {
@@ -34,7 +21,6 @@
       margin-bottom: 2rem;
       z-index: 100;
       text-shadow: 0 0 20px #ff0000;
-      display: none;
     }
 
     canvas {
@@ -106,8 +92,7 @@
   </style>
 </head>
 <body>
-  <button id="start-button">Start</button>
-  <div id="countdown">10:00</div>
+  <div id="countdown"></div>
   <div class="year-container">
     <span class="digit-static">2</span>
     <span class="digit-static">0</span>
@@ -128,76 +113,84 @@
     const countdown = document.getElementById('countdown');
     const happyNewYear = document.getElementById('happy-new-year');
     const dice = document.querySelector('.dice');
-    const startButton = document.getElementById('start-button');
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    const audioCtx = new AudioContext();
+    
+    let audioCtx = null;
+    let countdownValue = 10;
+    let lastPlayedSecond = null;
+    let countdownInterval = null;
 
-    let animationStarted = false;
-    let fireworksActive = false;
+    // Initialisation du contexte audio avec interaction utilisateur
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      return audioCtx;
+    }
 
-    function createBeepSound() {
+    // Son du compte à rebours normal (tick plus doux)
+    function createTickSound() {
+      if (!audioCtx) return;
+      
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
-
+  
       oscillator.connect(gainNode);
       gainNode.connect(audioCtx.destination);
+  
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
+      
+      gainNode.gain.setValueAtValue(0.1, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+  
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.05);
+  }
 
+    // Son du compte à rebours final (beep aigu)
+    function createBeepSound() {
+      if (!audioCtx) return;
+      
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+  
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+  
       oscillator.type = 'sine';
       oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
-
-      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  
+      gainNode.gain.setValueAtValue(0.2, audioCtx.currentTime);
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-
+  
       oscillator.start();
       oscillator.stop(audioCtx.currentTime + 0.1);
-    }
+  }
 
-    function createCountdownSound() {
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-
-      oscillator.type = 'square';
-      oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
-
-      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.2);
-    }
-
+    // Son d'explosion (bruit blanc avec enveloppe)
     function createExplosionSound() {
+      if (!audioCtx) return;
+      
       const bufferSize = audioCtx.sampleRate * 0.5;
       const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
       const data = buffer.getChannelData(0);
-
+  
       for (let i = 0; i < bufferSize; i++) {
-        data[i] = Math.random() * 2 - 1;
+          data[i] = Math.random() * 2 - 1;
       }
-
+  
       const source = audioCtx.createBufferSource();
       const gainNode = audioCtx.createGain();
-
+  
       source.buffer = buffer;
       source.connect(gainNode);
       gainNode.connect(audioCtx.destination);
-
+  
       gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-
+  
       source.start();
-    }
-
-    function resizeCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    }
-
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+  }
 
     class Firework {
       constructor() {
@@ -251,7 +244,7 @@
             y: this.y,
             vx: Math.cos(angle) * speed,
             vy: Math.sin(angle) * speed,
-            alpha: 1,
+            alpha: 1
           });
         }
       }
@@ -259,73 +252,110 @@
       draw() {
         if (!this.exploded) {
           ctx.beginPath();
-          ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+          ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
           ctx.fillStyle = this.color;
           ctx.fill();
         }
 
         for (const p of this.particles) {
           ctx.beginPath();
-          ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${parseInt(this.color.match(/\d+/g)[0])}, ${parseInt(
-            this.color.match(/\d+/g)[1]
-          )}, ${parseInt(this.color.match(/\d+/g)[2])}, ${p.alpha})`;
+          ctx.arc(p.x, p.y, 1, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${parseInt(this.color.slice(1), 16)}, ${p.alpha})`;
           ctx.fill();
         }
       }
     }
 
-    const fireworks = [];
-    for (let i = 0; i < 10; i++) {
-      fireworks.push(new Firework());
-    }
+    const fireworks = new Array(20).fill(null).map(() => new Firework());
 
-    function render() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    function startAnimation() {
+      const currentDate = new Date();
+      const currentYear = currentDate.getFullYear();
+      const targetDate = new Date(currentYear + 1, 0, 1, 0, 0, 0);
 
-      for (const firework of fireworks) {
-        firework.update();
-        firework.draw();
+      function updateCountdown() {
+        const now = new Date();
+        const timeDiff = targetDate - now;
+        const seconds = Math.floor(timeDiff / 1000);
+
+        if (seconds <= 0) {
+          clearInterval(countdownInterval);
+          countdown.style.display = 'none';
+          dice.style.transform = 'rotateX(180deg)';
+
+          setTimeout(() => {
+            happyNewYear.style.opacity = '1';
+            happyNewYear.style.transform = 'scale(1)';
+          }, 2000);
+          return;
+        }
+
+        // Jouer le son seulement si le contexte audio est initialisé
+        if (audioCtx && seconds !== lastPlayedSecond) {
+          if (seconds <= 10) {
+            createBeepSound();
+          } else {
+            createTickSound();
+          }
+          lastPlayedSecond = seconds;
+        }
+
+        if (seconds <= 10) {
+          countdown.textContent = seconds;
+        } else {
+          const hours = Math.floor(seconds / 3600);
+          const minutes = Math.floor((seconds % 3600) / 60);
+          const remainingSeconds = seconds % 60;
+          countdown.textContent = `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+        }
       }
 
-      if (fireworksActive) {
-        requestAnimationFrame(render);
+      updateCountdown();
+      countdownInterval = setInterval(updateCountdown, 1000);
+    }
+
+    function animate() {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+      // Vérifier si le compte à rebours est terminé
+      if (countdown.style.display === 'none') {
+          fireworks.forEach(fw => {
+              fw.update();
+              fw.draw();
+          });
       }
+  
+      requestAnimationFrame(animate);
+  }
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
     }
 
-    function updateCountdown() {
-      const now = new Date();
-      const midnight = new Date();
-      midnight.setHours(24, 0, 0, 0);
+    // Initialisation
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
 
-      const remainingTime = midnight - now;
-      if (remainingTime <= 0) {
-        startFireworks();
-        return;
+    // Gestionnaire d'interaction utilisateur pour initialiser l'audio
+    function handleUserInteraction() {
+      initAudio();
+      if (audioCtx) {
+          audioCtx.resume().then(() => {
+              // Jouer un son de test pour confirmer que l'audio fonctionne
+              createTickSound();
+          });
       }
-
-      const minutes = Math.floor((remainingTime % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((remainingTime % (1000 * 60)) / 1000);
-
-      countdown.textContent = `${minutes}:${seconds.toString().padStart(2, "0")}`;
-      createCountdownSound();
-      setTimeout(updateCountdown, 1000);
-    }
-
-    function startFireworks() {
-      countdown.style.display = "none";
-      fireworksActive = true;
-      render();
-      happyNewYear.style.opacity = 1;
-      happyNewYear.style.transform = "scale(1)";
-    }
-
-    startButton.addEventListener("click", () => {
-      startButton.style.display = "none";
-      countdown.style.display = "block";
-      audioCtx.resume().then(() => {
-        updateCountdown();
-      });
+      document.removeEventListener('click', handleUserInteraction);
+      document.removeEventListener('touchstart', handleUserInteraction);
+  }
+    // Démarrer l'animation
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        startAnimation();
+        animate();
+      }, 100);
     });
   </script>
 </body>
