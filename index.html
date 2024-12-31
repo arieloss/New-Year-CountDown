@@ -102,7 +102,6 @@
       margin-top: 2rem;
       text-shadow: 0 0 20px #ff0000;
       z-index: 100;
-    }
   </style>
   
 </head>
@@ -135,6 +134,25 @@
 
     let countdownValue = 10;
     let animationStarted = false;
+    let lastPlayedSecond = null;
+
+    // Son du compte à rebours normal (tick plus doux)
+  function createTickSound() {
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // La note A4 (plus douce)
+
+        gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime); // Volume plus faible
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.05);
+    }
 
     // Son du compte à rebours (beep aigu)
     function createBeepSound() {
@@ -297,9 +315,18 @@
           return;
         }
 
+        // Jouer le son approprié
+        if (seconds !== lastPlayedSecond) {
+          if (seconds <= 10) {
+            createBeepSound();
+          } else {
+            createTickSound();
+          }
+          lastPlayedSecond = seconds;
+        }
+
         if (seconds <= 10) {
           countdown.textContent = seconds;
-          createBeepSound();
         } else {
           const hours = Math.floor(seconds / 3600);
           const minutes = Math.floor((seconds % 3600) / 60);
